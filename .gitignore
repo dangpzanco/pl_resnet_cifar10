@@ -1,3 +1,37 @@
+############# Begin Custom Rules
+
+# Personal data
+telegram.json
+hparams.yaml
+
+# Data containers
+*.npy
+*.npz
+*.cpickle
+*.pkl
+*.h5
+*.7z
+
+# Experiment data
+*.experiment
+events.out.tfevents.*
+*.ckpt
+
+# VSCode
+.vscode/
+
+# Result files
+*.pdf
+*.png
+*.eps
+*.csv
+*.tar*
+
+# CIFAR-10 Dataset (Pytorch)
+cifar-10-batches-py
+
+############# End Custom Rules
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
