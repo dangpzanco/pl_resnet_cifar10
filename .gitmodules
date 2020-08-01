@@ -1,0 +1,3 @@
+[submodule "resnet_cifar10"]
+	path = resnet_cifar10
+	url = https://github.com/akamaster/pytorch_resnet_cifar10.git
