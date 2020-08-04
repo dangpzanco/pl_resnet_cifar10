@@ -244,7 +244,7 @@ def main(hparams):
         lr_finder = trainer.lr_find(
             model,
             num_training=hparams.epochs*batches_per_epoch,
-            min_lr=1e-5,
+            min_lr=hparams.learning_rate,
             mode='exponential')
 
         # # Results can be found in
@@ -294,7 +294,6 @@ def main(hparams):
     fig.tight_layout()
     fig.savefig('custom_lr_finder.png', dpi=300, format='png')
     plt.show()
-
 
     return hparams
 
