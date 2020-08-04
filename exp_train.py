@@ -237,7 +237,7 @@ def main(hparams):
     # 3 FIND INITIAL LEARNING RATE
     # -----------------------------
 
-    if hparams.scheduler == 'clr':
+    if hparams.lr_finder:
         # Run learning rate finder
         # trainer.accumulate_grad_batches = model.batches_per_epoch
         batches_per_epoch = model.batches_per_epoch
@@ -370,6 +370,12 @@ if __name__ == '__main__':
         type=float, default=1.0,
         help='Fraction of validation dataset to use. \
               (Default: 1.0).'
+    )
+    parent_parser.add_argument(
+        '--lr_finder',
+        dest='lr_finder',
+        action='store_true',
+        help='Get initial learning rate via a LR Finder.'
     )
     parent_parser.add_argument(
         '--continue_from',
