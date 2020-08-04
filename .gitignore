@@ -22,7 +22,7 @@ events.out.tfevents.*
 
 # Result files
 *.pdf
-*.png
+# *.png
 *.eps
 *.csv
 *.tar*
