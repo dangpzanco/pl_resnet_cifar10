@@ -18,7 +18,8 @@ from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
 from lr_logger import LearningRateLogger
 
 from notifications import notify
-from callbacks import CustomLogger
+from callbacks import CSVLogger, PandasLogger
+from lr_finder import LRFinder
 
 
 def get_last_version(exp_path):
@@ -93,20 +94,6 @@ def parse_list(value):
         value_list.append(val)
 
     return value_list
-
-
-def lr_suggestion(metrics, filter_size=100, skip_begin=10, skip_end=1):
-    loss = metrics['loss']
-    lrs = metrics['lr']
-
-    # Moving average before calculating the "gradient"
-    from scipy import signal
-    coef = np.ones(filter_size) / filter_size
-    loss = signal.filtfilt(coef, 1, loss)
-
-    index = np.gradient(loss[skip_begin:-skip_end]).argmin() + skip_begin
-
-    return index, lrs, loss
 
 
 def main(hparams):
@@ -208,9 +195,9 @@ def main(hparams):
 
     # -------- Custom Callbacks --------
 
-    custom_logger = CustomLogger()
+    csv_logger = CSVLogger()
     lr_logger = LearningRateLogger()
-    callback_list = [lr_logger, custom_logger]
+    callback_list = [lr_logger, csv_logger]
 
     # -------- Trainer --------
 
@@ -225,8 +212,8 @@ def main(hparams):
         checkpoint_callback=checkpoint_callback,
         early_stop_callback=early_stop_callback,
         profiler=profiler,
-        train_percent_check=hparams.train_subset,
-        val_percent_check=hparams.val_subset,
+        limit_train_batches=hparams.train_subset,
+        limit_val_batches=hparams.val_subset,
         resume_from_checkpoint=resume_path,
         callbacks=callback_list,
         benchmark=True,  # optimized CUDA convolution algorithm
@@ -238,62 +225,18 @@ def main(hparams):
     # -----------------------------
 
     if hparams.lr_finder:
-        # Run learning rate finder
-        # trainer.accumulate_grad_batches = model.batches_per_epoch
-        batches_per_epoch = model.batches_per_epoch
-        lr_finder = trainer.lr_find(
-            model,
-            num_training=hparams.epochs*batches_per_epoch,
-            min_lr=hparams.learning_rate,
-            mode='exponential')
+        finder = LRFinder(hparams, LightningModel)
+        finder.fit()
 
-        # # Results can be found in
-        # print(lr_finder.results)
-        # print(lr_finder.suggestion())
-
-        # Plot
         import matplotlib.pyplot as plt
-        fig = lr_finder.plot(suggest=True)
-        fig.tight_layout()
-        fig.savefig('lr_finder.png', dpi=300, format='png')
+        finder.plot()
         plt.show()
-
-        # Pick point based on plot, or get suggestion
-        new_lr = lr_finder.suggestion()
-
-        # # update hparams of the model
-        # model.hparams.learning_rate = new_lr
 
     # ------------------------
     # 4 START TRAINING
     # ------------------------
 
-    result = trainer.fit(model)
-
-    print(result)
-
-    metrics = trainer.callbacks[1].batch_metrics
-    loss = metrics['loss'].values
-
-    index, lrs, loss = lr_suggestion(metrics, model.batches_per_epoch)
-    custom_lr = lrs[index]
-
-    print('lr_finder:', new_lr)
-    print('custom_lr_finder:', custom_lr)
-
-    # Plot
-    import matplotlib.pyplot as plt
-    fig, ax = plt.subplots()
-    ax.plot(metrics['lr'], metrics['loss'], ':', label='Per Batch')
-    ax.plot(lrs, loss, label='Filtered ("Per Epoch")')
-    ax.plot(lrs[index], loss[index], 'ro', label='Suggestion')
-    ax.set_xscale('log')
-    ax.set_xlabel('Learning Rate')
-    ax.set_ylabel('Loss')
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig('custom_lr_finder.png', dpi=300, format='png')
-    plt.show()
+    trainer.fit(model)
 
     return hparams
 
@@ -376,6 +319,13 @@ if __name__ == '__main__':
         dest='lr_finder',
         action='store_true',
         help='Get initial learning rate via a LR Finder.'
+    )
+    parent_parser.add_argument(
+        '--lr_epochs',
+        dest='lr_epochs',
+        type=int, default=10,
+        help='Number of epochs to run the with LR Finder. \
+              (Default: 10).'
     )
     parent_parser.add_argument(
         '--continue_from',

@@ -18,7 +18,7 @@ import pytorch_lightning as pl
 import pytorch_lightning.metrics as plm
 
 from resnet_cifar10 import resnet
-from pytorch_lightning.trainer.lr_finder import _ExponentialLR, _LinearLR
+from lr_finder import _LinearLR, _ExponentialLR
 
 
 class LightningModel(pl.LightningModule):
@@ -101,6 +101,7 @@ class LightningModel(pl.LightningModule):
         lr = self.trainer.lr_schedulers[0]['scheduler']._last_lr[0]
 
         tqdm_dict = {'acc': acc, 'lr': lr}
+        # tqdm_dict = {'acc': acc}
         output = OrderedDict({
             'loss': loss_val,
             'progress_bar': tqdm_dict,
@@ -221,45 +222,45 @@ class LightningModel(pl.LightningModule):
         :return: list of optimizers
         """
 
-        if self.hparams.optimizer.lower() == 'sgd':
+        if self.hparams.optimizer == 'sgd':
             optimizer = optim.SGD(self.parameters(),
                                   self.hparams.learning_rate,
                                   momentum=self.hparams.momentum,
                                   weight_decay=self.hparams.weight_decay)
-        elif self.hparams.optimizer.lower() == 'adam':
+        elif self.hparams.optimizer == 'adam':
             optimizer = optim.Adam(self.parameters(),
                                    weight_decay=self.hparams.weight_decay)
 
-        if self.hparams.scheduler.lower() == 'clr':
-            customlr = _ExponentialLR
-            # customlr = _LinearLR
-            clr = customlr(
+        if self.hparams.scheduler == 'clr':
+            last_iteration = self.hparams.last_epoch
+            if self.hparams.last_epoch >= 0:
+                last_iteration *= self.batches_per_epoch
+            clr = optim.lr_scheduler.CyclicLR(
                 optimizer,
-                end_lr=1,
-                num_iter=self.hparams.epochs*self.batches_per_epoch,
-                last_epoch=-1
+                base_lr=self.hparams.learning_rate,
+                max_lr=100*self.hparams.learning_rate,
+                step_size_up=4*self.batches_per_epoch,
+                # mode='triangular',
+                mode='triangular2',
+                # mode='exp_range',
+                cycle_momentum=True,
+                base_momentum=0.8,
+                max_momentum=0.9,
+                last_epoch=last_iteration
             )
-            # last_iteration = self.hparams.last_epoch
-            # if self.hparams.last_epoch >= 0:
-            #     last_iteration *= self.batches_per_epoch
-            # clr = optim.lr_scheduler.CyclicLR(
-            #     optimizer,
-            #     base_lr=self.hparams.learning_rate,
-            #     # max_lr=10*self.hparams.learning_rate,
-            #     max_lr=10,
-            #     # step_size_up=2*self.batches_per_epoch,
-            #     step_size_up=self.hparams.epochs*self.batches_per_epoch,
-            #     # step_size_up=2,
-            #     mode='triangular',
-            #     # mode='triangular2',
-            #     # mode='exp_range',
-            #     # cycle_momentum=True,
-            #     cycle_momentum=False,
-            #     base_momentum=0.8,
-            #     max_momentum=0.9,
-            #     last_epoch=last_iteration
-            # )
             scheduler = dict(scheduler=clr,
+                             interval='step')
+        elif self.hparams.scheduler == 'sweep_lin':
+            sweep = _LinearLR(
+                optimizer, end_lr=self.hparams.end_lr,
+                num_iter=self.hparams.lr_epochs*self.batches_per_epoch)
+            scheduler = dict(scheduler=sweep,
+                             interval='step')
+        elif self.hparams.scheduler == 'sweep_exp':
+            sweep = _ExponentialLR(
+                optimizer, end_lr=self.hparams.end_lr,
+                num_iter=self.hparams.lr_epochs*self.batches_per_epoch)
+            scheduler = dict(scheduler=sweep,
                              interval='step')
         else:
             scheduler = optim.lr_scheduler.MultiStepLR(

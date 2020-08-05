@@ -8,11 +8,11 @@ from datetime import datetime
 from collections import OrderedDict
 
 
-class CustomLogger(pl.Callback):
+class CSVLogger(pl.Callback):
     """Custom metric logger and model checkpoint."""
 
     def __init__(self, output_path=None):
-        super(CustomLogger, self).__init__()
+        super(CSVLogger, self).__init__()
         self._epoch = None
 
         if output_path is None:
@@ -163,3 +163,66 @@ class CustomLogger(pl.Callback):
     def on_test_end(self, trainer, pl_module):
         """Called when the test ends."""
         pass
+
+
+class PandasLogger(pl.Callback):
+    """PandasLogger metric logger and model checkpoint."""
+
+    def __init__(self):
+        super(PandasLogger, self).__init__()
+
+        self.batch_metrics = pd.DataFrame()
+        self.epoch_metrics = pd.DataFrame()
+        self._epoch = 0
+
+    def _extract_metrics(self, trainer, interval):
+        metrics = trainer.callback_metrics
+        metric_keys = list(metrics.keys())
+        data_dict = OrderedDict()
+
+        # setup required metrics depending on interval
+        if interval == 'epoch':
+            if interval in metric_keys:
+                metric_keys.remove('epoch')
+                data_dict['epoch'] = metrics['epoch']
+            else:
+                data_dict['epoch'] = self._epoch
+            data_dict['time'] = str(datetime.now())
+            self._epoch += 1
+        elif interval in ['step', 'batch']:
+            remove_list = ['train', 'val', 'epoch']
+            for m in metrics.keys():
+                if any(sub in m for sub in remove_list):
+                    metric_keys.remove(m)
+            data_dict[interval] = trainer.global_step
+
+        # populate ordered dictionary
+        for k in metric_keys:
+            if isinstance(metrics[k], dict):
+                for j in metrics[k].keys():
+                    data_dict[j] = metrics[k][j]
+            else:
+                data_dict[k] = metrics[k]
+
+        # cleanup
+        for k in data_dict.keys():
+            try:
+                data_dict[k] = data_dict[k].cpu().numpy()
+            except Exception:
+                pass
+
+        # dataframe with a single row (one interval)
+        metrics = pd.DataFrame.from_records([data_dict], index=interval)
+
+        return metrics
+
+    def on_batch_end(self, trainer, pl_module):
+        """Called when the training batch ends."""
+        if trainer.global_step > 0:
+            new_metrics = self._extract_metrics(trainer, 'batch')
+            self.batch_metrics = pd.concat([self.batch_metrics, new_metrics])
+
+    def on_epoch_end(self, trainer, pl_module):
+        """Called when the epoch ends."""
+        new_metrics = self._extract_metrics(trainer, 'epoch')
+        self.epoch_metrics = pd.concat([self.epoch_metrics, new_metrics])
