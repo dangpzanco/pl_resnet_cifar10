@@ -15,10 +15,10 @@ from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.profiler import SimpleProfiler, AdvancedProfiler
 
-from lr_logger import LearningRateLogger
+# from lr_logger import LearningRateLogger
 
 from notifications import notify
-from callbacks import CSVLogger, PandasLogger
+from callbacks import CSVLogger
 from lr_finder import LRFinder
 
 
@@ -102,6 +102,9 @@ def main(hparams):
     :param hparams:
     """
 
+    # Set random seed before anything starts
+    hparams.seed = pl.seed_everything(hparams.seed)
+
     save_dir = pathlib.Path(hparams.model_path) / hparams.exp_name
     exp_path = save_dir / hparams.arch
     exp_path.mkdir(parents=True, exist_ok=True)
@@ -112,30 +115,21 @@ def main(hparams):
         elif type(hparams.cont) == str:
             version = get_last_version(exp_path)
 
-        ckpt_path = exp_path / f'version_{version}' / 'checkpoints'
-        epoch = get_last_epoch(ckpt_path)
-        resume_path = ckpt_path / f'epoch={epoch}.ckpt'
-        hparams.last_epoch = epoch
+        if version is not None:
+            ckpt_path = exp_path / f'version_{version}' / 'checkpoints'
+            epoch = get_last_epoch(ckpt_path)
+            resume_path = ckpt_path / f'epoch={epoch}.ckpt'
+            hparams.last_epoch = epoch
     else:
-        epoch = None
         version = None
 
-    # ------------------------
-    # 1 INIT LIGHTNING MODEL
-    # ------------------------
-
-    # Set random seed before anything starts
-    hparams.seed = pl.seed_everything(hparams.seed)
-
-    if epoch is None and version is None:
-        hparams.last_epoch = -1
+    if version is None:
+        epoch = None
         resume_path = None
-        model = LightningModel(hparams)
-    else:
-        model = LightningModel.load_from_checkpoint(resume_path)
+        hparams.last_epoch = -1
 
     # ------------------------
-    # 2 INIT TRAINER
+    # 1 INIT TRAINER
     # ------------------------
 
     # ---- Early Stopping ----
@@ -158,12 +152,12 @@ def main(hparams):
         name=hparams.arch,
         version=None
     )
+    actual_path = save_dir / logger.name / f'version_{logger.version}'
 
     # # ---- Optional Profiler ----
 
     if hparams.profiler is not None:
-        prof_path = save_dir / logger.name / \
-            f'version_{logger.version}' / 'profiles'
+        prof_path = actual_path / 'profiles'
         prof_path.mkdir(parents=True, exist_ok=True)
         prof_index = get_prof_index(prof_path)
         prof_filename = prof_path / f'profile_{prof_index}.log'
@@ -182,8 +176,7 @@ def main(hparams):
 
     # ---- Model Checkpoint ----
 
-    ckpt_path = save_dir / logger.name / \
-        f'version_{logger.version}' / 'checkpoints'
+    ckpt_path = actual_path / 'checkpoints'
     ckpt_path.mkdir(parents=True, exist_ok=True)
 
     checkpoint_callback = ModelCheckpoint(
@@ -196,8 +189,7 @@ def main(hparams):
     # -------- Custom Callbacks --------
 
     csv_logger = CSVLogger()
-    lr_logger = LearningRateLogger()
-    callback_list = [lr_logger, csv_logger]
+    callback_list = [csv_logger]
 
     # -------- Trainer --------
 
@@ -221,16 +213,47 @@ def main(hparams):
     )
 
     # -----------------------------
-    # 3 FIND INITIAL LEARNING RATE
+    # 2 FIND INITIAL LEARNING RATE
     # -----------------------------
 
     if hparams.lr_finder:
-        finder = LRFinder(hparams, LightningModel)
+        mode = 'linear'
+        finder = LRFinder(hparams, LightningModel,
+                          mode=mode, min_lr=1e-3, max_lr=1)
+        # mode = 'exponential'
+        # finder = LRFinder(hparams, LightningModel,
+        #                   mode=mode, min_lr=hparams.learning_rate, max_lr=1)
         finder.fit()
 
-        import matplotlib.pyplot as plt
-        finder.plot()
-        plt.show()
+        if hparams.lr_plot and not hparams.silent:
+            # Plot
+            import matplotlib.pyplot as plt
+            finder.plot()
+            plt.show()
+
+        # Set learning rate bounds
+        res, _, _ = finder.suggestion()
+        hparams.learning_rate = res.best_lr
+        # hparams.base_lr = res.min_lr
+        hparams.base_lr = res.best_lr
+        hparams.max_lr = res.max_lr
+
+        # Save LR Finder results
+        finder_path = actual_path / 'lr_finder'
+        finder_path.mkdir(parents=True, exist_ok=True)
+        finder.save(finder_path)
+
+        # Try to release memory
+        del finder
+
+    # ------------------------
+    # 3 INIT LIGHTNING MODEL
+    # ------------------------
+
+    if version is None:
+        model = LightningModel(hparams)
+    else:
+        model = LightningModel.load_from_checkpoint(resume_path)
 
     # ------------------------
     # 4 START TRAINING
@@ -326,6 +349,12 @@ if __name__ == '__main__':
         type=int, default=10,
         help='Number of epochs to run the with LR Finder. \
               (Default: 10).'
+    )
+    parent_parser.add_argument(
+        '--lr_plot',
+        dest='lr_plot',
+        action='store_true',
+        help='Plot LR Finder results.'
     )
     parent_parser.add_argument(
         '--continue_from',

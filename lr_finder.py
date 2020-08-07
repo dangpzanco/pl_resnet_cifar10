@@ -11,22 +11,27 @@ from torch.optim.lr_scheduler import _LRScheduler
 from pytorch_lightning import Trainer
 
 from callbacks import PandasLogger
+from collections import namedtuple
+
+import yaml
 
 
 class LRFinder():
     """Some Information about LRFinder"""
 
-    def __init__(self, hparams, model_class, end_lr=1, mode='exponential'):
+    def __init__(self, hparams, model_class,
+                 min_lr=1e-8, max_lr=1, mode='exponential'):
         super(LRFinder, self).__init__()
         self.hparams = copy.deepcopy(hparams)
         self.model_class = model_class
-        self.end_lr = end_lr
+        self.min_lr = min_lr
+        self.max_lr = max_lr
         self.mode = mode
         self.metrics = None
+        self.results = None
 
         self.setup_hparams()
         self.setup_model()
-        # self.setup_optimizers()
 
         self.trainer = Trainer(
             weights_summary=None,
@@ -45,7 +50,8 @@ class LRFinder():
         )
 
     def setup_hparams(self):
-        self.hparams.end_lr = self.end_lr
+        self.hparams.learning_rate = self.min_lr
+        self.hparams.max_lr = self.max_lr
         if self.mode == 'linear':
             self.hparams.scheduler = 'sweep_lin'
         elif self.mode == 'exponential':
@@ -58,49 +64,45 @@ class LRFinder():
     def setup_model(self):
         self.model = self.model_class(self.hparams)
 
-        # def log_lr_decorator(training_step):
-        #     def wrapper(*args):
-        #         output = training_step(*args)
-        #         lr = self.trainer.lr_schedulers[0]['scheduler']._last_lr[0]
-        #         output['log']['lr'] = lr
-        #         return output
-        #     return wrapper
-        # self.model.training_step = log_lr_decorator(self.model.training_step)
-
-    # def setup_optimizers(self):
-    #     optimizers, _ = self.model.configure_optimizers()
-
-    #     if len(optimizers) != 1:
-    #         m = f'`model.configure_optimizers()` returned {len(optimizers)}, \
-    #                but learning rate finder only works with single optimizer'
-    #         raise Exception(m)
-    #     else:
-    #         optimizer = optimizers[0]
-
-    #     args = dict(
-    #         optimizer=optimizer, end_lr=self.end_lr,
-    #         num_iter=self.hparams.lr_epochs*self.model.batches_per_epoch
-    #     )
-
-    #     scheduler = dict(scheduler=_ExponentialLR(**args), interval='step')
-
-    #     def configure_optimizers():
-    #         return [optimizer], [scheduler]
-
-    #     self.model.configure_optimizers = configure_optimizers
-
     def fit(self):
         self.trainer.fit(self.model)
         self.metrics = self.trainer.callbacks[0].batch_metrics
+
+    def save(self, save_path=None):
+        if self.metrics is None:
+            raise Warning('Run .fit() first.')
+            return
+
+        if self.results is None:
+            self.suggestion()
+
+        if save_path is None:
+            save_path = pathlib.Path('./lr_finder/')
+
+        self.metrics.to_csv(save_path / 'lr_metrics.csv', header=True)
+        with open(save_path / 'result.yml', 'w') as yaml_file:
+            yaml.dump(self.results, yaml_file)
+
+    def _filtered_metric(self, metric_name='loss', filter_size=None):
+        if self.metrics is None:
+            raise Warning('Run .fit() first.')
+            return None
+
+        if filter_size is None:
+            filter_size = self.model.batches_per_epoch
+
+        # Moving average
+        metric = self.metrics[metric_name].astype(float).values
+        coef = np.ones(filter_size) / filter_size
+        metric = signal.filtfilt(coef, 1, metric)
+
+        return metric
 
     def suggestion(self, metric_name='loss', mode='auto',
                    filter_size=None, skip_begin=10, skip_end=1):
         if self.metrics is None:
             raise Warning('Run .fit() first.')
             return None, None, None
-
-        if filter_size is None:
-            filter_size = self.model.batches_per_epoch
 
         if mode == 'auto':
             if 'loss' in metric_name:
@@ -112,20 +114,36 @@ class LRFinder():
 
         if mode == 'min':
             check_op = np.argmin
+            compare_op = np.less
         elif mode == 'max':
-            check_op = np.argmin
+            check_op = np.argmax
+            compare_op = np.greater
 
-        metric = self.metrics[metric_name].astype(float)
-        lrs = self.metrics['lr'].astype(float)
+        metric = self._filtered_metric(metric_name, filter_size)
+        lrs = self.metrics['lr'].astype(float).values
+        grad = np.gradient(metric)[skip_begin:-skip_end]
 
-        # Moving average before calculating the "gradient"
-        coef = np.ones(filter_size) / filter_size
-        metric = signal.filtfilt(coef, 1, metric)
+        best_index = check_op(grad)
+        min_index = check_op(compare_op(0, grad)[:best_index+1])
+        max_index = check_op(compare_op(grad, 0)[best_index:])
 
-        index = np.gradient(metric[skip_begin:-skip_end])
-        index = check_op(index) + skip_begin
+        best_index += skip_begin
+        min_index += skip_begin
+        max_index += skip_begin + best_index
 
-        return index, lrs, metric
+        results = dict(
+            best_index=int(best_index),
+            best_lr=float(lrs[best_index]),
+            min_index=int(min_index),
+            min_lr=float(lrs[min_index]),
+            max_index=int(max_index),
+            max_lr=float(lrs[max_index])
+        )
+        self.results = results
+        LRSuggestion = namedtuple('LRSuggestion', results)
+        results = LRSuggestion(**results)
+
+        return results, lrs, metric
 
     def plot(self, metric_name='loss', suggestion_args=None,
              save_path=None, format='png'):
@@ -140,16 +158,60 @@ class LRFinder():
         metric_label = metric_name.replace('_', ' ').title()
         scale = self.mode if self.mode == 'linear' else 'log'
 
-        index, lrs, metric = self.suggestion(**suggestion_args)
+        res, lrs, metric = self.suggestion(**suggestion_args)
 
         fig, ax = plt.subplots()
-        ax.plot(self.metrics['lr'], self.metrics[metric_name], ':')
+        ax.plot(lrs, self.metrics[metric_name], ':')
         ax.plot(lrs, metric)
-        ax.plot(lrs[index], metric[index], 'ro')
+        ax.plot(res.best_lr, metric[res.best_index], 'ro')
+        ax.plot(res.min_lr, metric[res.min_index], 'go')
+        ax.plot(res.max_lr, metric[res.max_index], 'bo')
         ax.set_xscale(scale)
         ax.set_xlabel('Learning Rate')
         ax.set_ylabel(metric_label)
-        ax.legend(['Per Batch', 'Filtered', 'LR Suggestion'])
+        ax.legend(['Per Batch', 'Filtered',
+                   f"Sugg. (Best LR = {res.best_lr:.3e})",
+                   f"Sugg. (Min. LR = {res.min_lr:.3e})",
+                   f"Sugg. (Max. LR = {res.max_lr:.3e})"])
+        fig.tight_layout()
+        if save_path is not None:
+            save_path = pathlib.Path(save_path)
+            fig.savefig(save_path.with_suffix(f'.{format}'),
+                        dpi=150, format=format)
+
+        return fig, ax
+
+    def plot_grad(self, metric_name='loss', suggestion_args=None,
+                  save_path=None, format='png'):
+        import matplotlib.pyplot as plt
+        if self.metrics is None:
+            raise Warning('Run .fit() first.')
+            return None, None
+
+        if suggestion_args is None:
+            suggestion_args = dict(metric_name=metric_name)
+
+        metric_label = metric_name.replace('_', ' ').title()
+        scale = self.mode if self.mode == 'linear' else 'log'
+
+        res, lrs, metric = self.suggestion(**suggestion_args)
+
+        grad = np.gradient(self.metrics[metric_name])
+        filt_grad = np.gradient(metric)
+
+        fig, ax = plt.subplots()
+        ax.plot(lrs, grad, ':')
+        ax.plot(lrs, filt_grad)
+        ax.plot(res.best_lr, filt_grad[res.best_index], 'ro')
+        ax.plot(res.min_lr, filt_grad[res.min_index], 'go')
+        ax.plot(res.max_lr, filt_grad[res.max_index], 'bo')
+        ax.set_xscale(scale)
+        ax.set_xlabel('Learning Rate')
+        ax.set_ylabel(metric_label)
+        ax.legend(['Per Batch', 'Filtered',
+                   f"Sugg. (Best LR = {res.best_lr:.3e})",
+                   f"Sugg. (Min. LR = {res.min_lr:.3e})",
+                   f"Sugg. (Max. LR = {res.max_lr:.3e})"])
         fig.tight_layout()
         if save_path is not None:
             save_path = pathlib.Path(save_path)

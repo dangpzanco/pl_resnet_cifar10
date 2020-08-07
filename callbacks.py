@@ -64,7 +64,7 @@ class CSVLogger(pl.Callback):
         # cleanup
         for k in data_dict.keys():
             try:
-                data_dict[k] = data_dict[k].cpu().numpy()
+                data_dict[k] = float(data_dict[k].cpu())
             except Exception:
                 pass
 
@@ -168,7 +168,7 @@ class CSVLogger(pl.Callback):
 class PandasLogger(pl.Callback):
     """PandasLogger metric logger and model checkpoint."""
 
-    def __init__(self):
+    def __init__(self, save_path=None):
         super(PandasLogger, self).__init__()
 
         self.batch_metrics = pd.DataFrame()
@@ -199,17 +199,9 @@ class PandasLogger(pl.Callback):
         # populate ordered dictionary
         for k in metric_keys:
             if isinstance(metrics[k], dict):
-                for j in metrics[k].keys():
-                    data_dict[j] = metrics[k][j]
+                continue
             else:
-                data_dict[k] = metrics[k]
-
-        # cleanup
-        for k in data_dict.keys():
-            try:
-                data_dict[k] = data_dict[k].cpu().numpy()
-            except Exception:
-                pass
+                data_dict[k] = float(metrics[k])
 
         # dataframe with a single row (one interval)
         metrics = pd.DataFrame.from_records([data_dict], index=interval)
@@ -226,3 +218,7 @@ class PandasLogger(pl.Callback):
         """Called when the epoch ends."""
         new_metrics = self._extract_metrics(trainer, 'epoch')
         self.epoch_metrics = pd.concat([self.epoch_metrics, new_metrics])
+
+    def on_train_end(self, trainer, pl_module):
+        """Called when the train ends."""
+        pass

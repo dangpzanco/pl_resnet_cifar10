@@ -237,9 +237,9 @@ class LightningModel(pl.LightningModule):
                 last_iteration *= self.batches_per_epoch
             clr = optim.lr_scheduler.CyclicLR(
                 optimizer,
-                base_lr=self.hparams.learning_rate,
-                max_lr=100*self.hparams.learning_rate,
-                step_size_up=4*self.batches_per_epoch,
+                base_lr=self.hparams.base_lr,
+                max_lr=self.hparams.max_lr,
+                step_size_up=8*self.batches_per_epoch,
                 # mode='triangular',
                 mode='triangular2',
                 # mode='exp_range',
@@ -252,13 +252,13 @@ class LightningModel(pl.LightningModule):
                              interval='step')
         elif self.hparams.scheduler == 'sweep_lin':
             sweep = _LinearLR(
-                optimizer, end_lr=self.hparams.end_lr,
+                optimizer, end_lr=self.hparams.max_lr,
                 num_iter=self.hparams.lr_epochs*self.batches_per_epoch)
             scheduler = dict(scheduler=sweep,
                              interval='step')
         elif self.hparams.scheduler == 'sweep_exp':
             sweep = _ExponentialLR(
-                optimizer, end_lr=self.hparams.end_lr,
+                optimizer, end_lr=self.hparams.max_lr,
                 num_iter=self.hparams.lr_epochs*self.batches_per_epoch)
             scheduler = dict(scheduler=sweep,
                              interval='step')
