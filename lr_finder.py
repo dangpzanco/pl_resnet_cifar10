@@ -19,7 +19,7 @@ import yaml
 class LRFinder():
     """Some Information about LRFinder"""
 
-    def __init__(self, hparams, model_class,
+    def __init__(self, hparams, model_class, num_epochs=10,
                  min_lr=1e-8, max_lr=1, mode='exponential'):
         super(LRFinder, self).__init__()
         self.hparams = copy.deepcopy(hparams)
@@ -37,7 +37,7 @@ class LRFinder():
             weights_summary=None,
             default_root_dir=tempfile.gettempdir(),
             gpus=self.hparams.gpus,
-            max_epochs=self.hparams.lr_epochs,
+            max_epochs=num_epochs,
             precision=self.hparams.precision,
             logger=False,
             checkpoint_callback=False,
@@ -176,8 +176,8 @@ class LRFinder():
         fig.tight_layout()
         if save_path is not None:
             save_path = pathlib.Path(save_path)
-            fig.savefig(save_path.with_suffix(f'.{format}'),
-                        dpi=150, format=format)
+            save_path = save_path / f'lr_finder.{format}'
+            fig.savefig(save_path, dpi=150, format=format)
 
         return fig, ax
 
@@ -215,8 +215,8 @@ class LRFinder():
         fig.tight_layout()
         if save_path is not None:
             save_path = pathlib.Path(save_path)
-            fig.savefig(save_path.with_suffix(f'.{format}'),
-                        dpi=150, format=format)
+            save_path = save_path / f'lr_finder_grad.{format}'
+            fig.savefig(save_path, dpi=150, format=format)
 
         return fig, ax
 

@@ -217,19 +217,15 @@ def main(hparams):
     # -----------------------------
 
     if hparams.lr_finder:
-        mode = 'linear'
-        finder = LRFinder(hparams, LightningModel,
-                          mode=mode, min_lr=1e-3, max_lr=1)
-        # mode = 'exponential'
+        # mode = 'linear'
         # finder = LRFinder(hparams, LightningModel,
-        #                   mode=mode, min_lr=hparams.learning_rate, max_lr=1)
+        #                   num_epochs=hparams.lr_epochs,
+        #                   mode=mode, min_lr=1e-3, max_lr=1)
+        mode = 'exponential'
+        finder = LRFinder(hparams, LightningModel,
+                          num_epochs=hparams.lr_epochs,
+                          mode=mode, min_lr=hparams.learning_rate, max_lr=1)
         finder.fit()
-
-        if hparams.lr_plot and not hparams.silent:
-            # Plot
-            import matplotlib.pyplot as plt
-            finder.plot()
-            plt.show()
 
         # Set learning rate bounds
         res, _, _ = finder.suggestion()
@@ -242,6 +238,14 @@ def main(hparams):
         finder_path = actual_path / 'lr_finder'
         finder_path.mkdir(parents=True, exist_ok=True)
         finder.save(finder_path)
+
+        if hparams.lr_plot:
+            # Plot
+            import matplotlib.pyplot as plt
+            finder.plot(save_path=finder_path)
+            finder.plot_grad(save_path=finder_path)
+            if not hparams.silent:
+                plt.show()
 
         # Try to release memory
         del finder
