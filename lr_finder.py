@@ -124,12 +124,12 @@ class LRFinder():
         grad = np.gradient(metric)[skip_begin:-skip_end]
 
         best_index = check_op(grad)
-        min_index = check_op(compare_op(0, grad)[:best_index+1])
+        min_index = check_op(compare_op(grad, 0)[:best_index+1][::-1])
         max_index = check_op(compare_op(grad, 0)[best_index:])
 
         best_index += skip_begin
-        min_index += skip_begin
-        max_index += skip_begin + best_index
+        min_index = best_index - min_index
+        max_index = best_index + max_index
 
         results = dict(
             best_index=int(best_index),
@@ -169,6 +169,7 @@ class LRFinder():
         ax.set_xscale(scale)
         ax.set_xlabel('Learning Rate')
         ax.set_ylabel(metric_label)
+        ax.grid(True)
         ax.legend(['Per Batch', 'Filtered',
                    f"Sugg. (Best LR = {res.best_lr:.3e})",
                    f"Sugg. (Min. LR = {res.min_lr:.3e})",
@@ -207,7 +208,8 @@ class LRFinder():
         ax.plot(res.max_lr, filt_grad[res.max_index], 'bo')
         ax.set_xscale(scale)
         ax.set_xlabel('Learning Rate')
-        ax.set_ylabel(metric_label)
+        ax.set_ylabel(f'Grad. of {metric_label}')
+        ax.grid(True)
         ax.legend(['Per Batch', 'Filtered',
                    f"Sugg. (Best LR = {res.best_lr:.3e})",
                    f"Sugg. (Min. LR = {res.min_lr:.3e})",
