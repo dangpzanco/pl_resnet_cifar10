@@ -79,7 +79,13 @@ class LRFinder():
         if save_path is None:
             save_path = pathlib.Path('./lr_finder/')
 
+        # Make sure path exists
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        # Save metrics
         self.metrics.to_csv(save_path / 'lr_metrics.csv', header=True)
+
+        # Save suggestion results
         with open(save_path / 'result.yml', 'w') as yaml_file:
             yaml.dump(self.results, yaml_file)
 

@@ -230,13 +230,18 @@ def main(hparams):
         # Set learning rate bounds
         res, _, _ = finder.suggestion()
         hparams.learning_rate = res.best_lr
-        # hparams.base_lr = res.min_lr
         hparams.base_lr = res.best_lr
         hparams.max_lr = res.max_lr
 
+        print('######### Learning Rate Finder #########')
+        print(f"LR range = ({finder.min_lr:.3e}, {finder.max_lr:.3e})")
+        print(f"Sugg. (Best LR = {res.best_lr:.3e})")
+        print(f"Sugg. (Min. LR = {res.min_lr:.3e})")
+        print(f"Sugg. (Max. LR = {res.max_lr:.3e})")
+        print('######### Learning Rate Finder #########')
+
         # Save LR Finder results
         finder_path = actual_path / 'lr_finder'
-        finder_path.mkdir(parents=True, exist_ok=True)
         finder.save(finder_path)
 
         if hparams.lr_plot:
