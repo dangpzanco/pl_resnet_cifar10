@@ -234,20 +234,20 @@ class LightningModel(pl.LightningModule):
         if self.hparams.scheduler == 'clr':
             last_iteration = self.hparams.last_epoch
             if self.hparams.last_epoch >= 0:
+                last_iteration += 1
                 last_iteration *= self.batches_per_epoch
-            clr = optim.lr_scheduler.CyclicLR(
-                optimizer,
+                last_iteration -= 1
+            clr_config = dict(
                 base_lr=self.hparams.base_lr,
                 max_lr=self.hparams.max_lr,
-                step_size_up=8*self.batches_per_epoch,
-                # mode='triangular',
-                mode='triangular2',
-                # mode='exp_range',
+                step_size_up=self.hparams.epochs_up*self.batches_per_epoch,
+                mode=self.hparams.clr_mode,
                 cycle_momentum=True,
                 base_momentum=0.8,
                 max_momentum=0.9,
                 last_epoch=last_iteration
             )
+            clr = optim.lr_scheduler.CyclicLR(optimizer, **clr_config)
             scheduler = dict(scheduler=clr,
                              interval='step')
         elif self.hparams.scheduler == 'sweep_lin':
@@ -395,15 +395,26 @@ class LightningModel(pl.LightningModule):
         parser.add_argument('--optimizer', default='sgd', type=str,
                             help='Optimization algorithm \
                                   [sgd (default), adam].')
-        parser.add_argument('--scheduler', default='default', type=str,
-                            help='Scheduler profile. \
-                                Possible values: [default, clr].')
         parser.add_argument('--learning_rate', default=0.1, type=float,
                             help='Initial learning rate (default: 0.1).')
         parser.add_argument('--momentum', default=0.9, type=float,
                             help='Momentum (default: 0.9).')
         parser.add_argument('--weight_decay', default=1e-4, type=float,
                             help='Weight decay (default: 1e-4).')
+
+        # Scheduler params
+        parser.add_argument('--scheduler', default='default', type=str,
+                            help='Scheduler profile. \
+                                Possible values: [default, clr, \
+                                    sweep_lin (LRF), sweep_exp (LRF)].')
+        parser.add_argument('--epochs_up', default=8, type=int,
+                            help='Number of training epochs in the increasing \
+                                  half of a cycle. Only for the clr scheduler \
+                                  (default: 8).')
+        parser.add_argument('--clr_mode', default='triangular2', type=str,
+                            help='Cyclic Learning Rate profile. \
+                                  Possible values: [triangular, \
+                                  triangular2 (default), exp_range].')
 
         return parser
 

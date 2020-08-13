@@ -142,7 +142,7 @@ def main(hparams):
         min_delta=0.0,
         patience=hparams.patience,
         verbose=True,
-        mode='auto'
+        mode='min'
     )
 
     # # ----     Logger     ----
@@ -216,11 +216,11 @@ def main(hparams):
     # 2 FIND INITIAL LEARNING RATE
     # -----------------------------
 
-    if hparams.lr_finder:
+    if hparams.lr_finder or hparams.scheduler == 'clr':
         # mode = 'linear'
         # finder = LRFinder(hparams, LightningModel,
         #                   num_epochs=hparams.lr_epochs,
-        #                   mode=mode, min_lr=1e-3, max_lr=1)
+        #                   mode=mode, min_lr=1e-6, max_lr=0.05)
         mode = 'exponential'
         finder = LRFinder(hparams, LightningModel,
                           num_epochs=hparams.lr_epochs,
@@ -249,7 +249,7 @@ def main(hparams):
             import matplotlib.pyplot as plt
             finder.plot(save_path=finder_path)
             finder.plot_grad(save_path=finder_path)
-            if not hparams.silent:
+            if hparams.lr_show_plot:
                 plt.show()
 
         # Try to release memory
@@ -364,6 +364,12 @@ if __name__ == '__main__':
         dest='lr_plot',
         action='store_true',
         help='Plot LR Finder results.'
+    )
+    parent_parser.add_argument(
+        '--lr_show_plot',
+        dest='lr_show_plot',
+        action='store_true',
+        help='Show LR Finder results plot.'
     )
     parent_parser.add_argument(
         '--continue_from',

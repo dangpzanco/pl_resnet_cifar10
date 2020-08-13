@@ -203,20 +203,19 @@ class LRFinder():
 
         res, lrs, metric = self.suggestion(**suggestion_args)
 
-        grad = np.gradient(self.metrics[metric_name])
+        # grad = np.gradient(self.metrics[metric_name])
         filt_grad = np.gradient(metric)
 
         fig, ax = plt.subplots()
-        ax.plot(lrs, grad, ':')
-        ax.plot(lrs, filt_grad)
+        ax.plot(lrs, filt_grad, 'tab:orange')
         ax.plot(res.best_lr, filt_grad[res.best_index], 'ro')
         ax.plot(res.min_lr, filt_grad[res.min_index], 'go')
         ax.plot(res.max_lr, filt_grad[res.max_index], 'bo')
-        ax.set_xscale(scale)
         ax.set_xlabel('Learning Rate')
-        ax.set_ylabel(f'Grad. of {metric_label}')
+        ax.set_ylabel(f'Grad. of {metric_label} over LR')
+        ax.set_xscale(scale)
         ax.grid(True)
-        ax.legend(['Per Batch', 'Filtered',
+        ax.legend(['Grad. of Filtered Loss',
                    f"Sugg. (Best LR = {res.best_lr:.3e})",
                    f"Sugg. (Min. LR = {res.min_lr:.3e})",
                    f"Sugg. (Max. LR = {res.max_lr:.3e})"])
