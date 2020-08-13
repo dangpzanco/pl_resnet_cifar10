@@ -217,14 +217,10 @@ def main(hparams):
     # -----------------------------
 
     if hparams.lr_finder or hparams.scheduler == 'clr':
-        # mode = 'linear'
-        # finder = LRFinder(hparams, LightningModel,
-        #                   num_epochs=hparams.lr_epochs,
-        #                   mode=mode, min_lr=1e-6, max_lr=0.05)
         mode = 'exponential'
         finder = LRFinder(hparams, LightningModel,
-                          num_epochs=hparams.lr_epochs,
-                          mode=mode, min_lr=hparams.learning_rate, max_lr=1)
+                          num_epochs=hparams.lr_epochs, mode=mode,
+                          min_lr=hparams.lr_min, max_lr=hparams.lr_max)
         finder.fit()
 
         # Set learning rate bounds
@@ -282,7 +278,34 @@ if __name__ == '__main__':
     root_dir = os.path.dirname(os.path.realpath(__file__))
     parent_parser = ArgumentParser(add_help=False)
 
-    # gpu args
+    # Experiment params
+    parent_parser.add_argument(
+        '--model_path',
+        dest='model_path',
+        default='saved_models',
+        help='Where the trained model will be saved \
+              (Default: ./saved_models).'
+    )
+    parent_parser.add_argument(
+        '--exp_name',
+        dest='exp_name',
+        default='resnet_cifar10',
+        help='Experiment name (Default: resnet_cifar10).'
+    )
+    parent_parser.add_argument(
+        '--seed',
+        dest='seed',
+        type=int,
+        help='Random seed (Default: None).'
+    )
+    parent_parser.add_argument(
+        '--continue_from',
+        dest='cont',
+        help='Continue training from a previous checkpoint. \
+              Possible values: [last (str), a version number (int)].'
+    )
+
+    # GPU params
     parent_parser.add_argument(
         '--gpus', '-g',
         dest='gpus',
@@ -299,19 +322,8 @@ if __name__ == '__main__':
         help='Choose float precision. Possible values: \
               [32 (default), 16] bits.'
     )
-    parent_parser.add_argument(
-        '--model_path',
-        dest='model_path',
-        default='saved_models',
-        help='Where the trained model will be saved \
-              (Default: ./saved_models).'
-    )
-    parent_parser.add_argument(
-        '--exp_name',
-        dest='exp_name',
-        default='resnet_cifar10',
-        help='Experiment name (Default: resnet_cifar10).'
-    )
+
+    # Boolean params
     parent_parser.add_argument(
         '--debug',
         dest='debug',
@@ -327,11 +339,22 @@ if __name__ == '__main__':
               [None (default), simple, advanced].'
     )
     parent_parser.add_argument(
-        '--seed',
-        dest='seed',
-        type=int,
-        help='Random seed (Default: None).'
+        '--silent',
+        dest='silent',
+        action='store_true',
+        help='Silence the progress bar output. This is useful \
+              when running on Google Colab, since it freezes \
+              your web browser when too much information is printed.'
     )
+    parent_parser.add_argument(
+        '--notify',
+        dest='telegram',
+        action='store_true',
+        help='Notify start and stop of training via Telegram. \
+              A telegram.json file must be provided on this folder.'
+    )
+
+    # Dataset params
     parent_parser.add_argument(
         '--train_subset',
         dest='train_subset',
@@ -346,11 +369,25 @@ if __name__ == '__main__':
         help='Fraction of validation dataset to use. \
               (Default: 1.0).'
     )
+
+    # Learning Rate Finder params
     parent_parser.add_argument(
         '--lr_finder',
         dest='lr_finder',
         action='store_true',
         help='Get initial learning rate via a LR Finder.'
+    )
+    parent_parser.add_argument(
+        '--lr_min',
+        dest='lr_min',
+        type=float, default=1e-7,
+        help='Minimum learning rate value for the LR Finder.'
+    )
+    parent_parser.add_argument(
+        '--lr_max',
+        dest='lr_max',
+        type=float, default=1,
+        help='Maximum learning rate value for the LR Finder.'
     )
     parent_parser.add_argument(
         '--lr_epochs',
@@ -371,27 +408,8 @@ if __name__ == '__main__':
         action='store_true',
         help='Show LR Finder results plot.'
     )
-    parent_parser.add_argument(
-        '--continue_from',
-        dest='cont',
-        help='Continue training from a previous checkpoint. \
-              Possible values: [last (str), a version number (int)].'
-    )
-    parent_parser.add_argument(
-        '--silent',
-        dest='silent',
-        action='store_true',
-        help='Silence the progress bar output. This is useful \
-              when running on Google Colab, since it freezes \
-              your web browser when too much information is printed.'
-    )
-    parent_parser.add_argument(
-        '--notify',
-        dest='telegram',
-        action='store_true',
-        help='Notify start and stop of training via Telegram. \
-              A telegram.json file must be provided on this folder.'
-    )
+
+    # Grid search experiment params
     parent_parser.add_argument(
         '--param-name',
         dest='param_name',
