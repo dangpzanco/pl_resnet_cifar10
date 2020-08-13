@@ -104,7 +104,7 @@ class LRFinder():
 
         return metric
 
-    def suggestion(self, metric_name='loss', mode='auto',
+    def suggestion(self, metric_name='loss', mode='auto', threshold=0.1,
                    filter_size=None, skip_begin=10, skip_end=1):
         if self.metrics is None:
             raise Warning('Run .fit() first.')
@@ -130,8 +130,10 @@ class LRFinder():
         grad = np.gradient(metric)[skip_begin:-skip_end]
 
         best_index = check_op(grad)
-        min_index = check_op(compare_op(grad, 0)[:best_index+1][::-1])
-        max_index = check_op(compare_op(grad, 0)[best_index:])
+        tau = grad[best_index + skip_begin] * threshold
+
+        min_index = check_op(compare_op(grad, tau)[:best_index+1][::-1])
+        max_index = check_op(compare_op(grad, tau)[best_index:])
 
         best_index += skip_begin
         min_index = best_index - min_index
